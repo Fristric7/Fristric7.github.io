@@ -1,0 +1,1 @@
+# Fristric7.github.io
