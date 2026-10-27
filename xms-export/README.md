@@ -2,7 +2,7 @@
 
 Every day at 10:23 UTC (6:23 a.m. Eastern in summer, 5:23 a.m. in winter), a GitHub Actions workflow
 opens <https://xms.sm360.ca/login> in a headless browser, signs in, follows the steps you give it to
-download the CSV export, and commits the file to a data repository:
+download the CSV export, and commits the file to this repository:
 
 ```
 data/xms/latest.csv            the newest export
@@ -10,35 +10,24 @@ data/xms/latest.json           its date, row count, size and SHA-256
 data/xms/2026/2026-10-27.csv   one file per day
 ```
 
-Any project that can read that repository can use the files (see [Using the files](#using-the-files)).
+Any project that can read this repository can use the files (see [Using the files](#using-the-files)).
 
 ## Setup
 
-All settings are under **Settings → Secrets and variables → Actions** of the repository that runs the
-workflow, on the **Secrets** and **Variables** tabs.
+All settings are under **Settings → Secrets and variables → Actions**, on the **Secrets** and
+**Variables** tabs.
 
-### 1. Choose where the files go
+### 1. Make this repository private
 
-This repository is public: anything committed here is visible to everyone, and published on
-fristric7.github.io. So the workflow refuses to save the export to a public repository unless you
-allow it.
+The export is committed here, and the workflow refuses to save it to a public repository. Open
+**Settings → General** and, under **Danger Zone**, use **Change visibility** to make it private.
 
-**Recommended: a private repository**, for example `xms-data`.
+On the free GitHub plan this takes the fristric7.github.io website offline: free accounts can only
+publish GitHub Pages sites from public repositories. Private repositories also have a monthly
+allowance of free Actions minutes (2,000 on the free plan); the export uses about 3 minutes a day.
 
-1. Create it at <https://github.com/new>: choose **Private** and tick **Add a README file**.
-2. Create a token at <https://github.com/settings/personal-access-tokens/new>: under **Repository
-   access** pick **Only select repositories** and choose `xms-data`, then under **Permissions** set
-   **Contents** to **Read and write**.
-3. Add the secret `XMS_DATA_TOKEN` (the token) and the variable `XMS_DATA_REPO` (`Fristric7/xms-data`).
-
-Better still, run everything from the private repository: copy `.github/workflows/xms-daily-export.yml`
-and the `xms-export` folder into it and do steps 2–4 there. It then commits to itself, so it needs
-no token, its run logs are private, and its daily commits keep the schedule active (GitHub pauses
-scheduled workflows in a public repository after 60 days without activity).
-
-**Only if the export holds nothing sensitive**, you can keep it here: set the variable
-`XMS_ALLOW_PUBLIC_DATA` to `true` and leave `XMS_DATA_REPO` unset. The files are then public, for
-example at `https://fristric7.github.io/data/xms/latest.csv`.
+To keep this repository public and commit the files to a separate private repository instead, set
+`XMS_DATA_REPO` and `XMS_DATA_TOKEN` (see [Settings](#settings)).
 
 ### 2. Add the XMS login
 
@@ -74,24 +63,24 @@ merge this into `main` first. Then open **Actions → XMS daily CSV export → R
 
 - Tick **dry run** to check that the download works without saving it anywhere.
 - If a run fails, its log says where the browser was and which export buttons it could see there.
-  Tick **debug** as well to keep a screenshot of the page for a day. In a public repository, anyone
-  signed in to GitHub can download it.
+  Tick **debug** as well to keep a screenshot of the page for a day, under **Artifacts** on the
+  run's page.
 
 The logs never contain your password, username or the rows of the export. They do show page addresses
-and titles, your steps, button labels, and the downloaded file's name and column names. In a public
-repository anyone can read them.
+and titles, your steps, button labels, and the downloaded file's name and column names.
 
 ## Using the files
 
-The data repository is an ordinary GitHub repository, so anything allowed to read it can use the files.
-To give another project access, create a token like the one in step 1 with **Contents** set to
-**Read-only**.
+Anything allowed to read this repository can use the files. To give another project access, create a
+token at <https://github.com/settings/personal-access-tokens/new>: under **Repository access** pick
+**Only select repositories** and choose this repository, then under **Permissions** set **Contents**
+to **Read-only**.
 
 From any script or tool:
 
 ```sh
 curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.raw" \
-  -o latest.csv https://api.github.com/repos/Fristric7/xms-data/contents/data/xms/latest.csv
+  -o latest.csv https://api.github.com/repos/Fristric7/Fristric7.github.io/contents/data/xms/latest.csv
 ```
 
 From another repository's GitHub Actions workflow:
@@ -99,14 +88,14 @@ From another repository's GitHub Actions workflow:
 ```yaml
 - uses: actions/checkout@v7
   with:
-    repository: Fristric7/xms-data
+    repository: Fristric7/Fristric7.github.io
     token: ${{ secrets.XMS_DATA_READ_TOKEN }}
     path: xms-data
 # The export is now at xms-data/data/xms/latest.csv
 ```
 
-On a computer: `git clone https://github.com/Fristric7/xms-data.git` once, then `git pull` for the
-newest file.
+On a computer: `git clone https://github.com/Fristric7/Fristric7.github.io.git` once, then `git pull`
+for the newest file.
 
 `latest.json` says which day `latest.csv` is from. Check it if your project must not use an old export.
 
@@ -128,6 +117,7 @@ To run at another time, change the `cron` line in `.github/workflows/xms-daily-e
 
 ## When a run fails
 
+- **Is public, so the export would be visible to anyone**: make the repository private (step 1).
 - **Login failed** or **Still on the login page**: check `XMS_USERNAME` and `XMS_PASSWORD`. If a run
   with **debug** shows a CAPTCHA, XMS is blocking automated browsers and this approach will not work.
 - **Asks for a verification code**: use an XMS user without two-factor authentication.
@@ -135,14 +125,11 @@ To run at another time, change the `cron` line in `.github/workflows/xms-daily-e
   on that page. Use one of those labels, and make sure the last step is the one that starts the download.
 - **Is a ZIP or Excel file** or **is a web page**: the last step downloaded something other than the
   CSV. Check which option it picks.
-- **Cannot read Fristric7/xms-data**: the token is missing, lacks access, or has expired. Create a new
-  one and update `XMS_DATA_TOKEN`.
+- **Cannot read …**: `XMS_DATA_REPO` is set, but `XMS_DATA_TOKEN` is missing, lacks access to that
+  repository, or has expired.
 - **The site cannot be reached**: if XMS only accepts connections from your dealership's network,
   GitHub's servers cannot reach it. Run it on a computer on that network instead (below), or on a
   [self-hosted runner](https://docs.github.com/actions/hosting-your-own-runners).
-- **The daily runs stopped**: GitHub pauses scheduled workflows in a public repository after 60 days
-  without activity, and emails you first. Turn it back on from the **Actions** tab, or move the workflow
-  to the private repository as described in step 1.
 
 ## Running it on your computer
 

@@ -78,7 +78,7 @@ jobs:
             exit 1
           fi
           if [ "$private" != true ] && [ "$ALLOW_PUBLIC" != true ]; then
-            echo "::error::$DATA_REPO is public, so the export would be visible to anyone. Set XMS_DATA_REPO to a private repository, or set XMS_ALLOW_PUBLIC_DATA to true if the export holds nothing sensitive."
+            echo "::error::$DATA_REPO is public, so the export would be visible to anyone. Make it private, set XMS_DATA_REPO to a private repository, or set XMS_ALLOW_PUBLIC_DATA to true if the export holds nothing sensitive."
             exit 1
           fi
 
