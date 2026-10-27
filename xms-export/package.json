@@ -1,0 +1,11 @@
+{
+  "name": "xms-export",
+  "private": true,
+  "description": "Logs in to XMS (sm360) and downloads the daily CSV export.",
+  "scripts": {
+    "export": "node export.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

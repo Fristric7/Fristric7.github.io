@@ -1,0 +1,114 @@
+name: XMS daily CSV export
+
+on:
+  schedule:
+    # Every day at 10:23 UTC: 6:23 a.m. in Toronto and Montréal in summer, 5:23 a.m. in winter.
+    - cron: '23 10 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Download the export but do not save it to the data repository
+        type: boolean
+        default: false
+      debug:
+        description: If it fails, keep a screenshot for a day (in a public repository, anyone signed in to GitHub can download it)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # Commits the export when this repository is also the data repository.
+
+concurrency:
+  group: xms-daily-export
+
+env:
+  DATA_REPO: ${{ vars.XMS_DATA_REPO || github.repository }}
+  DATA_DIR: data/xms
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Playwright and Chromium
+        working-directory: xms-export
+        run: |
+          npm ci
+          npx playwright install --with-deps --only-shell chromium
+
+      - name: Download the CSV export from XMS
+        working-directory: xms-export
+        env:
+          XMS_USERNAME: ${{ secrets.XMS_USERNAME }}
+          XMS_PASSWORD: ${{ secrets.XMS_PASSWORD }}
+          XMS_EXPORT_STEPS: ${{ vars.XMS_EXPORT_STEPS }}
+          XMS_LOGIN_URL: ${{ vars.XMS_LOGIN_URL }}
+          XMS_LOCALE: ${{ vars.XMS_LOCALE }}
+          XMS_TIMEZONE: ${{ vars.XMS_TIMEZONE }}
+          XMS_TIMEOUT_SECONDS: ${{ vars.XMS_TIMEOUT_SECONDS }}
+          OUTPUT_DIR: ${{ runner.temp }}/xms
+          XMS_DEBUG_DIR: ${{ inputs.debug && format('{0}/xms-debug', runner.temp) || '' }}
+        run: node export.mjs
+
+      - name: Upload the failure screenshot
+        if: failure() && inputs.debug
+        uses: actions/upload-artifact@v7
+        with:
+          name: xms-debug
+          path: ${{ runner.temp }}/xms-debug
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Check that the data repository is private
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.XMS_DATA_TOKEN || github.token }}
+          ALLOW_PUBLIC: ${{ vars.XMS_ALLOW_PUBLIC_DATA }}
+        run: |
+          if ! private=$(gh api "repos/$DATA_REPO" --jq .private); then
+            echo "::error::Cannot read $DATA_REPO. Check the XMS_DATA_REPO variable, and that the XMS_DATA_TOKEN secret has access to that repository."
+            exit 1
+          fi
+          if [ "$private" != true ] && [ "$ALLOW_PUBLIC" != true ]; then
+            echo "::error::$DATA_REPO is public, so the export would be visible to anyone. Set XMS_DATA_REPO to a private repository, or set XMS_ALLOW_PUBLIC_DATA to true if the export holds nothing sensitive."
+            exit 1
+          fi
+
+      - name: Check out the data repository
+        if: ${{ !inputs.dry_run }}
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.DATA_REPO }}
+          token: ${{ secrets.XMS_DATA_TOKEN || github.token }}
+          path: data-repo
+
+      - name: Commit the export
+        if: ${{ !inputs.dry_run }}
+        working-directory: data-repo
+        run: |
+          mkdir -p "$DATA_DIR"
+          cp -R "$RUNNER_TEMP/xms/." "$DATA_DIR/"
+          git add "$DATA_DIR"
+          if git diff --cached --quiet; then
+            echo "The export is the same as the one already committed."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet --message "XMS export for $(jq -r .date "$DATA_DIR/latest.json")"
+          branch=$(git branch --show-current)
+          for _ in 1 2 3; do
+            if git push --quiet origin "HEAD:$branch"; then
+              echo "Committed to [$DATA_REPO/$DATA_DIR](https://github.com/$DATA_REPO/tree/$branch/$DATA_DIR)." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git pull --quiet --rebase origin "$branch" || exit 1
+          done
+          exit 1
